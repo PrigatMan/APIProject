@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using System.Data.SqlClient;
 using System.Data;
 using Dapper;
+using FluentValidation;
 // For more information on enabling Web API for empty projects, visit https://go.microsoft.com/fwlink/?LinkID=397860
 
 namespace APIProject.Controllers
@@ -10,10 +11,12 @@ namespace APIProject.Controllers
     [ApiController]
     public class MasinaController : ControllerBase
     {
-        List<Masina> masina = new List<Masina>();
         private readonly string _connectionString;
-        public MasinaController(IConfiguration configuration)
+        private readonly IValidator<Masina> _validator;
+
+        public MasinaController(IValidator<Masina> validator, IConfiguration configuration)
         {
+            _validator = validator;
             _connectionString = configuration.GetConnectionString("DefaultConnection");
         }
         // GET: api/<MasinaController>
@@ -33,15 +36,33 @@ namespace APIProject.Controllers
         public Result Add(Masina value)
         {
             Result r = new Result();
-            if (Check(value, r))
+            var validationResult = _validator.Validate(value);
+            if (validationResult.IsValid)
             {
-                using (IDbConnection dbConnection = new SqlConnection(_connectionString))
+                try
                 {
-                    dbConnection.Open();
-                    dbConnection.Execute("INSERT INTO Masina (Id, Marca, Model, An, Motor) VALUES (@Id, @Marca, @Model, @An, @Motor)", value);
+                    using (IDbConnection dbConnection = new SqlConnection(_connectionString))
+                    {
+                        dbConnection.Open();
+                        dbConnection.Execute("INSERT INTO Masina (Id, Marca, Model, An, Motor) VALUES (@Id, @Marca, @Model, @An, @Motor)", value);
+                    }
+                    r.Success = true;
+                    r.Message = "Operation successful";
                 }
-                r.Success = true;
-                r.Message = "Operation successful";
+                catch (SqlException ex)
+                {
+                    if (ex.Number == 2627)
+                    {
+                        r.Errors.Add("The ID is Already present");
+                    }
+                        
+                    return r;
+                }
+                
+            }
+            else
+            {
+                r.Errors = validationResult.Errors.Select(error => error.ErrorMessage).ToList();
             }
             return r;
         }
@@ -51,15 +72,31 @@ namespace APIProject.Controllers
         public Result Edit(int id, Masina value)
         {
             Result r = new Result();
-            if (Check(value, r, id))
+            var validationResult = _validator.Validate(value);
+            if (validationResult.IsValid)
             {
-                using (IDbConnection dbConnection = new SqlConnection(_connectionString))
+                try 
                 {
-                    dbConnection.Open();
-                    dbConnection.Execute("UPDATE Masina SET Marca = @Marca, Model = @Model, An = @An, Motor = @Motor WHERE Id = @Id", value);
+                    using(IDbConnection dbConnection = new SqlConnection(_connectionString))
+                {
+                        dbConnection.Open();
+                        dbConnection.Execute("UPDATE Masina SET Marca = @Marca, Model = @Model, An = @An, Motor = @Motor WHERE Id = @Id", value);
+                    }
+                    r.Success = true;
+                    r.Message = "Operation successful";
                 }
-                r.Success = true;
-                r.Message = "Operation successful";
+                catch (SqlException ex) 
+                {
+                    if (ex.Number == 2627)
+                    {
+                        r.Errors.Add("The ID is Already present");
+                    }
+                    return r;
+                }            
+            }
+            else
+            {
+                r.Errors = validationResult.Errors.Select(error => error.ErrorMessage).ToList();
             }
             return r;
         }
@@ -80,12 +117,12 @@ namespace APIProject.Controllers
                 }
                 else
                 {
-                    r.Message = "Id not found";
+                    r.Errors.Add("Id not found");
                 }
             }
             return r;
         }
-
+        /*
         private bool Check(Masina value, Result result)
         {
             if (!(value.Id >= 0))
@@ -114,42 +151,7 @@ namespace APIProject.Controllers
                 return false;
             }
             return true;
-        }
-        private bool Check(Masina value, Result result, int id)
-        {
-            using (IDbConnection dbConnection = new SqlConnection(_connectionString))
-            {
-                dbConnection.Open();
-                var ValidId = dbConnection.Query<Masina>("SELECT * FROM Masina WHERE Id = @Id", new { id }).ToList();
-
-                if (!(value.Id >= 0))
-                {
-                    result.Message = "The Id value can't be negative";
-                    return false;
-                }
-                if (string.IsNullOrWhiteSpace(value.Marca))
-                {
-                    result.Message = "You must insert a car manufacturer";
-                    return false;
-                }
-                if (string.IsNullOrWhiteSpace(value.Model))
-                {
-                    result.Message = "You must insert the car model";
-                    return false;
-                }
-                if (!(value.An >= 1889))
-                {
-                    result.Message = "The year value must be higher than 1889";
-                    return false;
-                }
-                if (!(value.Motor > 0))
-                {
-                    result.Message = "The engine size value must be higher than 0";
-                    return false;
-                }
-                return true;
-            }
-        }
+        }*/
     }
 }
 

@@ -1,12 +1,9 @@
 ﻿using APIProject.Model;
-using Dapper;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
-using System;
-using System.Collections.Generic;
 using System.Data;
 using System.Data.SqlClient;
-using System.Linq;
+using Dapper;
+using FluentValidation;
 
 namespace APIProject.Controllers
 {
@@ -14,13 +11,14 @@ namespace APIProject.Controllers
     public class PersoanaController : ControllerBase
     {
         private readonly string _connectionString;
+        private readonly IValidator<Persoana> _validator;
 
-        public PersoanaController(IConfiguration configuration)
+        public PersoanaController(IValidator<Persoana> validator, IConfiguration configuration)
         {
+            _validator = validator;
             _connectionString = configuration.GetConnectionString("DefaultConnection");
         }
 
-        // GET: api/<PersoanaController>
         [HttpGet]
         [Route("api/[controller]/GetAll")]
         public IEnumerable<Persoana> GetAll()
@@ -32,71 +30,74 @@ namespace APIProject.Controllers
             }
         }
 
-        // POST api/<PersoanaController>
         [HttpPost]
         [Route("api/[controller]/Add")]
         public Result Add(Persoana value)
         {
             Result r = new Result();
-            if (Check(value, r))
+            var validationResult = _validator.Validate(value);
+            if (validationResult.IsValid)
             {
-                using (IDbConnection dbConnection = new SqlConnection(_connectionString))
+                try
                 {
-                    dbConnection.Open();
-                    var ValidId = dbConnection.Query<Persoana>("SELECT * FROM Persoana WHERE Id = @Id", new { value.Id }).ToList();
-                    if (!ValidId.Any())
+                    using (IDbConnection dbConnection = new SqlConnection(_connectionString))
                     {
-                        r.Success = true;
-                        r.Message = "Operation successful";
+                        dbConnection.Open();
                         dbConnection.Execute("INSERT INTO Persoana (Id, Nume, Prenume, Adresa, Email) VALUES (@Id, @Nume, @Prenume, @Adresa, @Email)", value);
                     }
-                    else
+                    r.Success = true;
+                    r.Message = "Operation successful";
+                }
+                catch (SqlException ex)
+                {
+                    if (ex.Number == 2627)
                     {
-                        r.Message = "The inserted id is already present";
+                        r.Errors.Add("The ID is Already present");
                     }
+                    return r;
                 }
             }
             else
             {
-                r.Message = "One of the inserted values is not accepted";
+                r.Errors = validationResult.Errors.Select(error => error.ErrorMessage).ToList();
             }
-
             return r;
         }
 
-        // PUT api/<PersoanaController>/5
         [HttpPut]
         [Route("api/[controller]/Edit/{id}")]
         public Result Edit(int id, Persoana value)
         {
             Result r = new Result();
-            if (Check(value, r, id))
+            var validationResult = _validator.Validate(value);
+            if (validationResult.IsValid)
             {
-                using (IDbConnection dbConnection = new SqlConnection(_connectionString))
+                try
                 {
-                    dbConnection.Open();
-                    var ValidId = dbConnection.Query<Persoana>("SELECT * FROM Persoana WHERE Id = @Id", new { id }).ToList();
-                    if (ValidId.Count == 1 && ValidId.First().Id == id || !ValidId.Any())
+                    using (IDbConnection dbConnection = new SqlConnection(_connectionString))
                     {
-                        r.Success = true;
-                        r.Message = "Operation successful";
+                        dbConnection.Open();
                         dbConnection.Execute("UPDATE Persoana SET Nume = @Nume, Prenume = @Prenume, Adresa = @Adresa, Email = @Email WHERE Id = @Id", value);
                     }
-                    else
+                    r.Success = true;
+                    r.Message = "Operation successful";
+                }
+                catch (SqlException ex)
+                {
+                    if (ex.Number == 2627)
                     {
-                        r.Message = "The inserted id is already present";
+                        r.Errors.Add("The ID is Already present");
                     }
+                    return r;
                 }
             }
             else
             {
-                r.Message = "One of the inserted values is not accepted";
+                r.Errors = validationResult.Errors.Select(error => error.ErrorMessage).ToList();
             }
-
             return r;
         }
 
-        // DELETE api/<PersoanaController>/5
         [HttpDelete]
         [Route("api/[controller]/Delete/{id}")]
         public Result Delete(int id)
@@ -105,88 +106,18 @@ namespace APIProject.Controllers
             using (IDbConnection dbConnection = new SqlConnection(_connectionString))
             {
                 dbConnection.Open();
-                int affectedRows = dbConnection.Execute("DELETE FROM Persoana WHERE Id = @Id", new { id });
-                if (affectedRows > 0)
+                int rowsAffected = dbConnection.Execute("DELETE FROM Persoana WHERE Id = @Id", new { Id = id });
+                if (rowsAffected > 0)
                 {
                     r.Success = true;
                     r.Message = "Operation successful";
                 }
                 else
                 {
-                    r.Message = "Id not found";
+                    r.Errors.Add("Id not found");
                 }
             }
             return r;
-        }
-
-        private bool Check(Persoana value, Result result)
-        {
-            if (value.Id < 0)
-            {
-                result.Message = "The Id value can't be negative";
-                return false;
-            }
-            if (string.IsNullOrWhiteSpace(value.Nume))
-            {
-                result.Message = "You must insert a name for the person";
-                return false;
-            }
-            if (string.IsNullOrWhiteSpace(value.Prenume))
-            {
-                result.Message = "You must insert a surname for the person";
-                return false;
-            }
-            if (string.IsNullOrWhiteSpace(value.Adresa))
-            {
-                result.Message = "You must insert an address for the person";
-                return false;
-            }
-            if (string.IsNullOrWhiteSpace(value.Email))
-            {
-                result.Message = "You must insert an email for the person";
-                return false;
-            }
-            return true;
-        }
-
-        private bool Check(Persoana value, Result result, int id)
-        {
-            using (IDbConnection dbConnection = new SqlConnection(_connectionString))
-            {
-                dbConnection.Open();
-                var ValidId = dbConnection.Query<Persoana>("SELECT * FROM Persoana WHERE Id = @Id", new { id }).ToList();
-                if (!ValidId.Any())
-                {
-                    result.Message = "Id not found";
-                    return false;
-                }
-                if (value.Id < 0)
-                {
-                    result.Message = "The Id value can't be negative";
-                    return false;
-                }
-                if (string.IsNullOrWhiteSpace(value.Nume))
-                {
-                    result.Message = "You must insert a name for the person";
-                    return false;
-                }
-                if (string.IsNullOrWhiteSpace(value.Prenume))
-                {
-                    result.Message = "You must insert a surname for the person";
-                    return false;
-                }
-                if (string.IsNullOrWhiteSpace(value.Adresa))
-                {
-                    result.Message = "You must insert an address for the person";
-                    return false;
-                }
-                if (string.IsNullOrWhiteSpace(value.Email))
-                {
-                    result.Message = "You must insert an email for the person";
-                    return false;
-                }
-                return true;
-            }
         }
     }
 }
